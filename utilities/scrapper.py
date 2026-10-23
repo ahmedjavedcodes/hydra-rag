@@ -11,8 +11,7 @@ import requests
 import urllib3
 from bs4 import BeautifulSoup
 
-scraped_data = "./data"
-os.makedirs(scraped_data, exist_ok=True)
+from utilities.session import DATA_ROOT, get_session_dir
 
 
 def fix_url_schema(url: str) -> str:
@@ -32,7 +31,7 @@ def fix_url_schema(url: str) -> str:
     return cleaned_url
 
 
-def sanitize_and_generate_dynamic_folder(raw_url: str) -> tuple:
+def sanitize_and_generate_dynamic_folder(raw_url: str, session_id: str) -> tuple:
     """Cleans trailing whitespaces, fixes broken URL slashes, and generates safe folder paths."""
     sanitized_url = fix_url_schema(raw_url)
     if not sanitized_url:
@@ -56,7 +55,7 @@ def sanitize_and_generate_dynamic_folder(raw_url: str) -> tuple:
     final_folder_name = f"{domain_clean}_{id_marker_clean}"
 
     unique_target_path = os.path.normpath(
-        os.path.join(scraped_data, final_folder_name)
+        os.path.join(get_session_dir(session_id), "web", final_folder_name)
     )
 
     return sanitized_url, unique_target_path
@@ -124,8 +123,10 @@ def dynamic_session_extractor(target_url: str, session_folder_path: str):
         return
 
     # Ensure path stays inside ./data
-    if not session_folder_path.startswith("./data"):
-        session_folder_path = os.path.join("./data", session_folder_path)
+    data_root = os.path.abspath(DATA_ROOT)
+    if os.path.commonpath([data_root, os.path.abspath(session_folder_path)]) != data_root:
+        print(" ✗ Error: Session folder path must be inside ./data.")
+        return
 
     os.makedirs(session_folder_path, exist_ok=True)
 
@@ -489,15 +490,15 @@ def dynamic_session_extractor(target_url: str, session_folder_path: str):
         print(f"   ✗ Connection Interrupted: {e}")
 
 
-def run_scrapper(url: str) -> str:
+def run_scrapper(url: str, session_id: str) -> str:
     """Pipeline execution wrapper.
 
-    Takes a URL, sanitizes it, runs the dynamic extractor, and returns the
-    absolute path where data was written.
+    Takes a URL and the caller's session id, sanitizes the URL, runs the dynamic
+    extractor into ./data/<session_id>/web/<site>/, and returns that path.
     """
     print(f"🚀 Initializing scraper for: {url}")
 
-    clean_url, target_path = sanitize_and_generate_dynamic_folder(url)
+    clean_url, target_path = sanitize_and_generate_dynamic_folder(url, session_id)
 
     if not clean_url or not target_path:
         print(" ✗ Error: Invalid URL input provided.")

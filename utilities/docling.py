@@ -8,7 +8,7 @@ load_dotenv()
 GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
 
 # Initialize the Gemini Client with your API Key
-client = genai.Client(api_key="GEMINI_API_KEY")
+client = genai.Client(api_key=GEMINI_API_KEY)
 
 def describe_image_gemini(image: Image.Image, element_type: str) -> str:
     """Sends PIL Image to Gemini 2.5 Flash API for instant OCR or table conversion."""

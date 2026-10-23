@@ -1,12 +1,14 @@
 import os
 import shutil
 import sys
-from typing import List, Union
+from typing import List, Optional, Union
 
 # Ensure root folder is always in Python's search path
 ROOT_DIR = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
 if ROOT_DIR not in sys.path:
     sys.path.insert(0, ROOT_DIR)
+
+from utilities.session import get_session_dir, new_session_id
 
 # Standard extension mappings
 FOLDER_MAPPINGS = {
@@ -16,20 +18,27 @@ FOLDER_MAPPINGS = {
 }
 
 
-def organize_files(file_paths: List[str], base_output_dir: str = "./data") -> str:
+def unique_destination(directory: str, filename: str) -> str:
+    """Returns a path in `directory` that doesn't overwrite an existing file (name.ext -> name_1.ext)."""
+    stem, ext = os.path.splitext(filename)
+    candidate = os.path.join(directory, filename)
+    counter = 1
+    while os.path.exists(candidate):
+        candidate = os.path.join(directory, f"{stem}_{counter}{ext}")
+        counter += 1
+    return candidate
+
+
+def organize_files(file_paths: List[str], session_id: str) -> str:
     """Organizes local user input files into categorized subfolders (images, spreadsheets, documents)
 
-    within a unified target root folder inside `./data`.
+    inside the session's own folder `./data/<session_id>/`.
     """
     if not file_paths:
         print("⚠ No files provided to organize.")
         return ""
 
-    # Create root folder for this batch ingestion session
-    session_folder = os.path.normpath(
-        os.path.join(base_output_dir, "user_uploads")
-    )
-    os.makedirs(session_folder, exist_ok=True)
+    session_folder = get_session_dir(session_id)
 
     processed_count = 0
 
@@ -55,11 +64,11 @@ def organize_files(file_paths: List[str], base_output_dir: str = "./data") -> st
         destination_dir = os.path.join(session_folder, target_subfolder)
         os.makedirs(destination_dir, exist_ok=True)
 
-        destination_path = os.path.join(destination_dir, filename)
+        destination_path = unique_destination(destination_dir, filename)
         shutil.copy2(file_path_str, destination_path)
 
         print(
-            f" ✓ Moved file '{filename}' -> {os.path.relpath(destination_path)}"
+            f" ✓ Copied file '{filename}' -> {os.path.relpath(destination_path)}"
         )
         processed_count += 1
 
@@ -69,24 +78,29 @@ def organize_files(file_paths: List[str], base_output_dir: str = "./data") -> st
     return session_folder
 
 
-def ingest_user_inputs(inputs: Union[str, List[str]]) -> dict:
+def ingest_user_inputs(
+    inputs: Union[str, List[str]], session_id: Optional[str] = None
+) -> dict:
     """Unified entry point for HydraRAG file ingestion.
 
-    Accepts single or multiple file paths and organizes them into structured folders.
+    Accepts single or multiple file paths and organizes them into the session's folder.
+    Pass the same `session_id` for later uploads in the same chat; omit it to start a new session.
     """
     if isinstance(inputs, str):
         inputs = [inputs]
 
-    results = {"uploaded_files_folder": None}
+    session_id = session_id or new_session_id()
+    results = {"session_id": session_id, "uploaded_files_folder": None}
 
     if inputs:
         print(f"\n📄 Organizing {len(inputs)} local input file(s)...")
-        uploads_path = organize_files(inputs)
-        results["uploaded_files_folder"] = uploads_path
+        results["uploaded_files_folder"] = organize_files(inputs, session_id)
 
     return results
 
 
-def run_ingestion(inputs: Union[str, List[str]]) -> dict:
+def run_ingestion(
+    inputs: Union[str, List[str]], session_id: Optional[str] = None
+) -> dict:
     """Wrapper function to trigger the complete ingestion pipeline."""
-    return ingest_user_inputs(inputs)
+    return ingest_user_inputs(inputs, session_id)

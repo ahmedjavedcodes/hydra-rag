@@ -16,3 +16,6 @@ wheels/
 
 # Claude Code local config
 .claude/
+
+# Generated runtime data (uploads, scraped pages)
+data/
