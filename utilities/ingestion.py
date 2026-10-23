@@ -14,7 +14,7 @@ from utilities.session import get_session_dir, new_session_id
 FOLDER_MAPPINGS = {
     "images": [".png", ".jpg", ".jpeg", ".webp", ".svg", ".bmp"],
     "spreadsheets": [".csv", ".xlsx", ".xls"],
-    "documents": [".pdf", ".docx", ".doc", ".txt", ".rtf"],
+    "documents": [".pdf", ".docx", ".doc", ".pptx", ".txt", ".rtf"],
 }
 
 

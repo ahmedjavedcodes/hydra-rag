@@ -69,8 +69,8 @@ def get_target_subfolder(filename: str, content_type: str = "") -> str:
         t in content_type for t in ["csv", "excel", "spreadsheet"]
     ):
         return "spreadsheets"
-    elif ext in [".pdf", ".docx", ".doc", ".txt", ".rtf"] or any(
-        t in content_type for t in ["pdf", "word", "text/plain"]
+    elif ext in [".pdf", ".docx", ".doc", ".pptx", ".txt", ".rtf"] or any(
+        t in content_type for t in ["pdf", "word", "presentation", "text/plain"]
     ):
         return "documents"
     elif ext in [".png", ".jpg", ".jpeg", ".webp", ".svg", ".bmp"] or "image" in content_type:

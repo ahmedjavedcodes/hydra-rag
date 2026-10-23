@@ -10,6 +10,10 @@ Query: query → embed query → Pinecone similarity search → top 10 (score �
 
 Planned stack: Python 3.13, LangChain, Pinecone, Groq, FastAPI, Next.js.
 
+### Channels
+
+The first client is WhatsApp through the Meta Cloud API: a FastAPI webhook receives messages and media, calls the RAG pipeline, and replies through the Graph API with the business access token. The session id for a WhatsApp user is derived from their `wa_id` with an HMAC (see `plans/03-api-frontend-and-deploy.md`). Verify `X-Hub-Signature-256` on every webhook POST, return 200 fast and process in the background, and dedupe by message id. The pipeline itself must stay channel-agnostic so a web frontend can reuse it.
+
 ### Vector store: Pinecone
 
 - All vectors live in a Pinecone index (no local Chroma/FAISS). Index dimension is 1024 (`BAAI/bge-large-en-v1.5`), metric cosine. Credentials go in `.env` (`PINECONE_API_KEY`).
@@ -19,7 +23,7 @@ Planned stack: Python 3.13, LangChain, Pinecone, Groq, FastAPI, Next.js.
 
 ### Answers and sources
 
-Every answer must be grounded in the retrieved chunks and return its sources: file name or URL, page (or sheet/row range for spreadsheets), and the supporting passage. If no chunk clears the 0.80 score threshold, say the documents don't contain the answer instead of letting the LLM guess.
+Every answer must be grounded in the retrieved chunks and return its sources: file name or URL, page (or sheet/row range for spreadsheets, slide number for presentations), and the supporting passage. If no chunk clears the 0.80 score threshold, say the documents don't contain the answer instead of letting the LLM guess.
 
 ### Dynamic file handling
 
@@ -53,7 +57,7 @@ There is no test suite, linter, or CI config yet.
 
 ## Configuration
 
-Secrets live in `.env` (gitignored, never commit): `HF_TOKEN`, `GROQ_API_KEY`. `utilities/docling.py` also expects `GEMINI_API_KEY`. Add `PINECONE_API_KEY` (not configured yet). Load them with `python-dotenv`.
+Secrets live in `.env` (gitignored, never commit): `HF_TOKEN`, `GROQ_API_KEY`. `utilities/docling.py` also expects `GEMINI_API_KEY`. Add `PINECONE_API_KEY` (not configured yet). The WhatsApp server will also need `WHATSAPP_ACCESS_TOKEN`, `WHATSAPP_PHONE_NUMBER_ID`, `WHATSAPP_VERIFY_TOKEN`, `WHATSAPP_APP_SECRET` and `SESSION_SECRET`. Load them with `python-dotenv`.
 
 ## Known issues
 

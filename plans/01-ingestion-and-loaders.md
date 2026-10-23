@@ -20,7 +20,7 @@ Add to `metadata`: `filename` or `source_url`, `session_id`, and a location (`pa
    - `.docx`: `python-docx` paragraphs, headings (fills `heading_path`) and tables.
    - `.csv`/`.xlsx`/`.xls`: `pandas`, batched rows to Markdown tables, keeping sheet and row range.
    - images: vision description (OCR for text-heavy images).
-   - `.pptx`: slide titles, text, images (add after the core formats work).
+   - `.pptx`: `python-pptx` per slide: title, text (including grouped shapes), tables, speaker notes, chart data, and pictures described by the vision model with the slide text as context. Citation location is the slide number.
    - URLs: existing scraper output (HTML text plus linked files) routed through the same loaders.
 4. **Hashing and versions.** Fill `content_hash` per element and `doc_id` from the file hash, so re-uploading the same file is detected. Set `version_id` when the same filename arrives with different content.
 5. **Limits and safety.** Max file size and file count per upload, extension allow-list, no executing or unpacking archives, scraper timeouts and a same-domain/size cap. Give vision calls retries and a per-batch concurrency limit (rate limits).
