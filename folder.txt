@@ -1,0 +1,52 @@
+HYDRARAG/
+│
+├── .env                     # API keys & secrets
+├── .gitignore               # Ignore .venv, __pycache__, vector_store, etc.
+├── requirements.txt         # Project dependencies
+├── README.md                # Setup instructions & project docs
+├── main.py                  # CLI / FastAPI / Streamlit entry point
+│
+├── data/                    # Storage for input/output data (ignored by git)
+│   ├── raw/                 # Incoming raw uploads (documents, images, tables)
+│   └── vector_db/           # Local persistent store (e.g., ChromaDB, FAISS index)
+│
+├── notebooks/               # Experimental Jupyter notebooks
+│   └── scraper_experiments.ipynb
+│
+├── tests/                   # Automated tests (pytest)
+│   └── test_ingestion.py
+│
+└── src/                     # Core application package
+    ├── __init__.py
+    ├── config.py            # Settings loader (Pydantic / dotenv)
+    │
+    ├── loaders/             # Step 1: Multi-format Document Loaders
+    │   ├── __init__.py
+    │   ├── doc_loader.py    # PDF, DOCX, TXT processing
+    │   ├── image_loader.py  # OCR / Vision LLM preprocessing
+    │   ├── table_loader.py  # CSV, XLSX parsing
+    │   └── web_loader.py    # Web scraping (BeautifulSoup / Playwright)
+    │
+    ├── processing/          # Step 2: Text Splitting & Chunking Strategies
+    │   ├── __init__.py
+    │   ├── chunkers.py      # Recursive, semantic, or markdown chunkers
+    │   └── cleaners.py      # Text normalization & metadata extraction
+    │
+    ├── embeddings/          # Step 3: Vector Embeddings & Store Manager
+    │   ├── __init__.py
+    │   ├── embedder.py      # Embedding model wrappers (OpenAI, HuggingFace, etc.)
+    │   └── vector_store.py  # Chroma / Qdrant / Pinecone interface
+    │
+    ├── retrieval/           # Step 4: Retrieval & Reranking Strategy
+    │   ├── __init__.py
+    │   ├── retriever.py     # Hybrid search (Dense + BM25)
+    │   └── reranker.py      # Cross-encoder / Cohere reranking
+    │
+    ├── pipeline/            # Step 5: Full Orchestration Chain
+    │   ├── __init__.py
+    │   ├── rag_chain.py     # LangChain / LlamaIndex / Custom LCEL chain
+    │   └── prompts.py       # Modular system prompts
+    │
+    └── utils/               # Generic Helper Utilities
+        ├── __init__.py
+        └── logger.py        # Logging setup

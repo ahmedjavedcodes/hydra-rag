@@ -1,0 +1,13 @@
+{
+    "doc_id": "...",
+    "version_id": "...",
+    "element_id": "...",
+    "type": "text|table|image|chart",
+    "page": 1,
+    "heading_path": [],
+    "title": "",
+    "content_text": "",
+    "content_structured": {},
+    "metadata": {},
+    "content_hash": ""
+}

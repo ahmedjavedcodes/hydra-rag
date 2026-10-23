@@ -1,0 +1,12 @@
+"Vision LLm" : "Qwen/Qwen2.5-VL-7B-Instruct"
+
+
+"Embedding Model" : "BAAI/bge-large-en-v1.5" #dimensions: 1024
+
+HydraRAG Ingestion
+Document Format	Primary Library	Ideal Output / Role
+PDF (.pdf)	PyMuPDF (fitz)	Text, bounding boxes, spatial coordinates, table detection, and raw image extraction.
+Word (.docx)	python-docx	Paragraph text and native document tables.
+Excel / CSV (.xlsx, .xls, .csv)	pandas	Structured data conversion to row-batched Markdown tables (df.to_markdown()).
+PowerPoint (.pptx)	python-pptx	Slide titles, text shapes, and embedded slide images.
+Plain Text / Markdown (.txt, .md)	Built-in open() or langchain_community.document_loaders.TextLoader	Raw string loading for downstream semantic splitting.
