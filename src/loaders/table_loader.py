@@ -48,7 +48,11 @@ def sheet_elements(ctx: LoadContext, sheet: Optional[str], rows: Rows) -> List[E
                 label,
                 title=sheet or "",
                 heading_path=[sheet] if sheet else [],
-                structured={"header": [str(h) for h in header], "rows": [[_plain(c) for c in r] for r in values]},
+                structured={
+                    "header": [str(h) for h in header],
+                    "rows": [[_plain(c) for c in r] for r in values],
+                    "row_numbers": [n for n, _ in batch],
+                },
             )
         )
     return elements

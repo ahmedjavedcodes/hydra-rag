@@ -37,3 +37,52 @@ class IngestionSettings:
 
 
 settings = IngestionSettings()
+
+
+def _env_float(name: str, default: float) -> float:
+    value = os.getenv(name)
+    try:
+        return float(value) if value else default
+    except ValueError:
+        return default
+
+
+class ConfigError(Exception):
+    """A required setting is missing or invalid. The message names the setting."""
+
+
+@dataclass(frozen=True)
+class RagSettings:
+    """Chunking, embedding, Pinecone, retrieval and answer settings (all overridable from .env)."""
+
+    pinecone_index: str = os.getenv("PINECONE_INDEX", "hydrarag")
+    pinecone_cloud: str = os.getenv("PINECONE_CLOUD", "aws")
+    pinecone_region: str = os.getenv("PINECONE_REGION", "us-east-1")
+    embedding_model: str = os.getenv("EMBEDDING_MODEL", "BAAI/bge-large-en-v1.5")
+    embedding_dimension: int = _env_int("EMBEDDING_DIMENSION", 1024)
+    reranker_model: str = os.getenv("RERANKER_MODEL", "BAAI/bge-reranker-large")
+    answer_model: str = os.getenv("ANSWER_MODEL", "openai/gpt-oss-120b")
+    top_k: int = _env_int("TOP_K", 10)
+    min_score: float = _env_float("MIN_SCORE", 0.80)
+    rerank_top_n: int = _env_int("RERANK_TOP_N", 3)
+    chunk_size: int = _env_int("CHUNK_SIZE", 800)
+    chunk_overlap: int = _env_int("CHUNK_OVERLAP", 100)
+    # Tables are only split when larger than this (rows lose meaning when cut apart)
+    table_chunk_size: int = _env_int("TABLE_CHUNK_SIZE", 2000)
+    max_question_chars: int = _env_int("MAX_QUESTION_CHARS", 1000)
+    # Chunk text stored in Pinecone metadata (the record limit is 40 KB)
+    metadata_text_limit: int = _env_int("METADATA_TEXT_LIMIT", 8000)
+    index_confirm_timeout_s: int = _env_int("INDEX_CONFIRM_TIMEOUT_S", 60)
+
+
+rag_settings = RagSettings()
+
+REQUIRED_KEYS = ("PINECONE_API_KEY", "GROQ_API_KEY")
+
+
+def require_keys(names=REQUIRED_KEYS) -> None:
+    """Fails fast at startup when a required key is missing. HF_TOKEN is optional: the default
+    models are public, a token only raises Hugging Face download rate limits."""
+    missing = [name for name in names if not os.getenv(name)]
+    if missing:
+        raise ConfigError(f"missing required setting(s) in .env: {', '.join(missing)}")

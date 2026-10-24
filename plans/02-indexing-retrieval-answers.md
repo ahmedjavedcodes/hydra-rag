@@ -4,6 +4,8 @@
 
 **Depends on:** Plan 1 (the element schema).
 
+**Status:** done on branch `feature/indexing-retrieval` (spec 02 acceptance criteria covered by `tests/test_rag.py`; AC10 calibration needs a labelled question set, see `scripts/calibrate_threshold.py`).
+
 ## Pipeline
 
 Ingestion: elements, then chunking, then embeddings, then Pinecone upsert.

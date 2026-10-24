@@ -1,6 +1,6 @@
 # HydraRAG
 
-Dynamic RAG system: anyone can upload any type of file (PDF, Word, spreadsheet, image, text) or give a URL. The system turns it into a searchable knowledge base, answers questions about it, and cites the sources of every answer. Ingestion (plan/spec 01) is built in `src/`: files and URLs become citable elements per session. Chunking, embeddings, Pinecone, reranking, the Groq answer chain (plan 02) and the FastAPI/WhatsApp server (plan 03) are not built yet. Plans are in `plans/`, specs with acceptance criteria in `specs/`.
+Dynamic RAG system: anyone can upload any type of file (PDF, Word, spreadsheet, image, text) or give a URL. The system turns it into a searchable knowledge base, answers questions about it, and cites the sources of every answer. Ingestion (plan/spec 01) and indexing, retrieval and grounded answers (plan/spec 02) are built in `src/`. The FastAPI/WhatsApp server (plan 03) is not built yet. Plans are in `plans/`, specs with acceptance criteria in `specs/`.
 
 ## Target architecture
 
@@ -43,9 +43,14 @@ uv run python main.py                     # placeholder, prints a greeting
 
 Full ingestion from Python: `from src.pipeline.ingest import ingest_files, ingest_url` (see the module docstring).
 
+```
+uv run python -m scripts.try_rag inputs/data.docx -q "What is ...?"   # live end-to-end run (Groq + Pinecone + local models); deletes its session afterwards
+uv run python -m scripts.calibrate_threshold questions.json          # report hit/false-answer rates per MIN_SCORE (no LLM calls)
+```
+
 Run scripts from the repo root. `utilities/ingestion.py` adds the root to `sys.path` and writes to `./data`, which is relative to the working directory.
 
-Tests patch `utilities.session.DATA_ROOT` to a temp folder and use a fake vision model (`tests/conftest.py`), and the URL tests run a local HTTP server with the SSRF guard patched. There is no linter or CI config yet.
+Tests patch `utilities.session.DATA_ROOT` to a temp folder and use a fake vision model (`tests/conftest.py`), and the URL tests run a local HTTP server with the SSRF guard patched. `tests/test_rag.py` uses a hashed bag-of-words embedder, a word-overlap reranker, a scripted LLM and `InMemoryVectorStore` (test-only; production is Pinecone). There is no linter or CI config yet.
 
 ## Layout
 
@@ -61,11 +66,16 @@ Tests patch `utilities.session.DATA_ROOT` to a temp folder and use a fake vision
 - `inputs/` — sample files (csv, docx, png, txt) for testing ingestion. `data/` is generated at runtime.
 - `notes.txt` — design notes: embedding model `BAAI/bge-large-en-v1.5` (1024 dims), vision model `Qwen/Qwen2.5-VL-7B-Instruct`, and a per-format library table (PyMuPDF for PDF, python-docx, pandas for xlsx/csv, python-pptx, TextLoader for txt/md).
 - `RAG/Dcoument Loaders/Pdf loader/notes.txt` — target element schema for extracted content: `doc_id`, `version_id`, `element_id`, `type` (text|table|image|chart), `page`, `heading_path`, `title`, `content_text`, `content_structured`, `metadata`, `content_hash`.
-- `folder.txt` — target `src/` layout. `src/loaders` and `src/pipeline` exist; `processing`, `embeddings` and `retrieval` come with plan 02.
+- `src/processing/chunkers.py` — elements to chunks: text by size (`CHUNK_SIZE` 800, `CHUNK_OVERLAP` 100) on paragraph/sentence/word boundaries; tables split only above `TABLE_CHUNK_SIZE` with the header repeated and exact spreadsheet row ranges (`row_numbers` from the table loader); image/chart descriptions whole. Chunk id `doc_id:element_id:chunk_n`; the embedded text is prefixed with the heading path.
+- `src/embeddings/embedder.py` — `BAAI/bge-large-en-v1.5`, normalised, bge query prefix on queries only. `vector_store.py` — `VectorStore` interface, `PineconeVectorStore` (creates the serverless index `PINECONE_INDEX`, default `hydrarag`, 1024/cosine, on first use; refuses an index with another dimension), `InMemoryVectorStore` for tests. Every method takes the namespace; nothing queries across namespaces.
+- `src/retrieval/` — `retrieve()` (top `TOP_K` in the session namespace, drops scores under `MIN_SCORE` and documents that are not `indexed`), `CrossEncoderReranker` (`BAAI/bge-reranker-large`, top `RERANK_TOP_N`).
+- `src/pipeline/index.py` — `Indexer`: `index_document`/`index_batch`/`index_session`, skips chunks whose id already holds the same content hash, caches embeddings by hash, removes stale chunk ids, rolls back all of a document's vectors if an upsert fails, confirms vectors are fetchable before `index_state=indexed` (else stays `indexing`; `refresh_status` re-checks), then marks older versions of the same filename/URL `replaced` and deletes their vectors. `delete_document`, `delete_session` (namespace + folder).
+- `src/pipeline/rag_chain.py` — `RagChain.ask(session_id, question) -> Answer(answer, found, sources, notes)`. Rejects empty/too-long questions (`QuestionError`), returns "no documents" / "not found" without calling the LLM when nothing is indexed or passes the threshold, calls the Groq model (`ANSWER_MODEL`, default `openai/gpt-oss-120b`) with numbered passages (`prompts.py`), treats `NOT_FOUND` or an answer without valid citations as not found, drops invalid `[n]` and renumbers sources. Service failures raise `ServiceError` with a user-facing message.
+- `folder.txt` — the original target layout; `src/` now follows it.
 
 ## Configuration
 
-Secrets live in `.env` (gitignored, never commit): `HF_TOKEN`, `GROQ_API_KEY`. Add `PINECONE_API_KEY` (not configured yet). The WhatsApp server will also need `WHATSAPP_ACCESS_TOKEN`, `WHATSAPP_PHONE_NUMBER_ID`, `WHATSAPP_VERIFY_TOKEN`, `WHATSAPP_APP_SECRET` and `SESSION_SECRET`. Load them with `python-dotenv`.
+Secrets live in `.env` (gitignored, never commit): `HF_TOKEN`, `GROQ_API_KEY`. `PINECONE_API_KEY` is required for indexing and questions (`require_keys()` checks it with `GROQ_API_KEY`; `HF_TOKEN` is optional). RAG settings (`PINECONE_INDEX`, `EMBEDDING_MODEL`, `RERANKER_MODEL`, `ANSWER_MODEL`, `TOP_K`, `MIN_SCORE`, `RERANK_TOP_N`, chunk sizes) are in `src/config.py` (`RagSettings`). The WhatsApp server will also need `WHATSAPP_ACCESS_TOKEN`, `WHATSAPP_PHONE_NUMBER_ID`, `WHATSAPP_VERIFY_TOKEN`, `WHATSAPP_APP_SECRET` and `SESSION_SECRET`. Load them with `python-dotenv`.
 
 ## Known issues
 
@@ -73,6 +83,9 @@ Secrets live in `.env` (gitignored, never commit): `HF_TOKEN`, `GROQ_API_KEY`. A
 - The SSRF check resolves the host before the request, so DNS rebinding is not fully prevented.
 - Playwright's sync API cannot run inside an asyncio event loop: call `ingest_url` from a thread (e.g. FastAPI background task in a threadpool) in plan 03.
 - Session folders are never cleaned up yet (planned in plan 03).
+- `MIN_SCORE=0.80` is uncalibrated; run `scripts/calibrate_threshold.py` on a labelled set before relying on it.
+- The content-hash skip works per chunk id (re-indexing the same document is free); identical text in a different document is re-upserted, but its embedding comes from the in-process cache.
+- Embedding and reranker models load on first use (several GB of RAM on CPU); the first question in a process is slow.
 
 ## Conventions
 

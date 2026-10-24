@@ -97,6 +97,20 @@ class SessionStore:
             record.update(fields, updated_at=_now())
             return dict(record)
 
+    def remove(self, doc_id: str) -> Optional[dict]:
+        """Deletes a document's record, elements and stored file. Returns the record, or None if unknown."""
+        with self._edit() as manifest:
+            record = manifest["documents"].pop(doc_id, None)
+        if record is None:
+            return None
+        for path in (os.path.join(self.elements_dir, f"{doc_id}.jsonl"), record.get("stored_path")):
+            if path and os.path.exists(path):
+                try:
+                    os.remove(path)
+                except OSError:
+                    pass
+        return record
+
     def write_elements(self, doc_id: str, elements: List[Element]) -> str:
         os.makedirs(self.elements_dir, exist_ok=True)
         path = os.path.join(self.elements_dir, f"{doc_id}.jsonl")
