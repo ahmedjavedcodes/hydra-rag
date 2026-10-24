@@ -18,15 +18,45 @@ FOLDER_MAPPINGS = {
 }
 
 
+def category_for(filename: str) -> str:
+    """Returns the subfolder (images, spreadsheets, documents, others) for a filename."""
+    ext = os.path.splitext(filename)[1].lower()
+    for folder_name, extensions in FOLDER_MAPPINGS.items():
+        if ext in extensions:
+            return folder_name
+    return "others"
+
+
 def unique_destination(directory: str, filename: str) -> str:
-    """Returns a path in `directory` that doesn't overwrite an existing file (name.ext -> name_1.ext)."""
+    """Claims a path in `directory` that doesn't overwrite an existing file (name.ext -> name_1.ext).
+
+    The file is created empty with an exclusive open, so two uploads at the same moment
+    can never get the same name.
+    """
     stem, ext = os.path.splitext(filename)
     candidate = os.path.join(directory, filename)
     counter = 1
-    while os.path.exists(candidate):
-        candidate = os.path.join(directory, f"{stem}_{counter}{ext}")
-        counter += 1
-    return candidate
+    while True:
+        try:
+            with open(candidate, "xb"):
+                return candidate
+        except FileExistsError:
+            candidate = os.path.join(directory, f"{stem}_{counter}{ext}")
+            counter += 1
+
+
+def store_file(source_path: str, root_dir: str, filename: Optional[str] = None) -> str:
+    """Copies a file into `root_dir/<category>/` without overwriting anything; returns the stored path."""
+    filename = os.path.basename(filename or source_path)
+    destination_dir = os.path.join(root_dir, category_for(filename))
+    os.makedirs(destination_dir, exist_ok=True)
+    destination_path = unique_destination(destination_dir, filename)
+    try:
+        shutil.copyfile(source_path, destination_path)
+    except OSError:
+        os.remove(destination_path)
+        raise
+    return destination_path
 
 
 def organize_files(file_paths: List[str], session_id: str) -> str:
@@ -50,22 +80,7 @@ def organize_files(file_paths: List[str], session_id: str) -> str:
             continue
 
         filename = os.path.basename(file_path_str)
-        _, ext = os.path.splitext(filename)
-        ext = ext.lower()
-
-        # Determine subfolder based on extension
-        target_subfolder = "others"
-        for folder_name, extensions in FOLDER_MAPPINGS.items():
-            if ext in extensions:
-                target_subfolder = folder_name
-                break
-
-        # Construct destination directory & copy file
-        destination_dir = os.path.join(session_folder, target_subfolder)
-        os.makedirs(destination_dir, exist_ok=True)
-
-        destination_path = unique_destination(destination_dir, filename)
-        shutil.copy2(file_path_str, destination_path)
+        destination_path = store_file(file_path_str, session_folder)
 
         print(
             f" ✓ Copied file '{filename}' -> {os.path.relpath(destination_path)}"
@@ -81,9 +96,10 @@ def organize_files(file_paths: List[str], session_id: str) -> str:
 def ingest_user_inputs(
     inputs: Union[str, List[str]], session_id: Optional[str] = None
 ) -> dict:
-    """Unified entry point for HydraRAG file ingestion.
+    """Copies files into the session's folder without extracting anything.
 
-    Accepts single or multiple file paths and organizes them into the session's folder.
+    For full ingestion (limits, loaders, elements, per-file status) use
+    `src.pipeline.ingest.ingest_files`.
     Pass the same `session_id` for later uploads in the same chat; omit it to start a new session.
     """
     if isinstance(inputs, str):

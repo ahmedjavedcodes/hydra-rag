@@ -2,7 +2,7 @@
 
 **Goal:** any uploaded file or URL becomes a list of clean, citable *elements* in one common schema, isolated per session.
 
-**Status:** started. Session folders, file routing and the scraper exist. The PDF loader exists only as a notebook.
+**Status:** done on branch `feature/ingestion-loaders` (all acceptance criteria in `specs/01-ingestion-and-loaders.md` covered by `tests/`).
 
 ## Element schema (output of every loader)
 
