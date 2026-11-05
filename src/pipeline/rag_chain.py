@@ -25,6 +25,8 @@ NOT_FOUND_MESSAGE = "I couldn't find the answer to that in your documents."
 NO_DOCUMENTS_MESSAGE = "No documents are ready yet. Send a file or a link first, then ask your question."
 
 _CITATION = re.compile(r"\[(\d+)\]")
+# Some models (e.g. gpt-oss) cite with full-width brackets or line ranges: 【1】, ［1］, 【1†L2-L4】, [1†L3]
+_WIDE_CITATION = re.compile(r"[【［\[]\s*(\d+)\s*(?:†[^】］\]]*)?[】］\]]")
 
 
 class QuestionError(ValueError):
@@ -68,7 +70,11 @@ def groq_llm(settings: RagSettings = rag_settings) -> Callable[[str, str], str]:
     from langchain_core.messages import HumanMessage, SystemMessage
     from langchain_groq import ChatGroq
 
-    model = ChatGroq(model=settings.answer_model, temperature=0, max_tokens=1024)
+    kwargs = {}
+    if settings.answer_model.startswith("openai/gpt-oss"):
+        # Reasoning tokens count towards max_tokens; keep them small so the answer isn't cut off
+        kwargs["reasoning_effort"] = settings.answer_reasoning_effort
+    model = ChatGroq(model=settings.answer_model, temperature=0, max_tokens=4096, **kwargs)
 
     def call(system: str, user: str) -> str:
         return model.invoke([SystemMessage(content=system), HumanMessage(content=user)]).content
@@ -153,7 +159,7 @@ class RagChain:
         return self._parse(raw or "", ranked, notes)
 
     def _parse(self, raw: str, ranked, notes: List[str]) -> Answer:
-        text = raw.strip()
+        text = _WIDE_CITATION.sub(r"[\1]", raw.strip())
         if not text or text.upper().startswith(NOT_FOUND_TOKEN):
             return Answer(NOT_FOUND_MESSAGE, found=False, notes=notes)
 

@@ -1,6 +1,7 @@
 import json
 import os
 import threading
+import time
 from contextlib import contextmanager
 from datetime import datetime, timezone
 from typing import Dict, Iterator, List, Optional
@@ -28,7 +29,15 @@ def _atomic_write(path: str, text: str) -> None:
     tmp = f"{path}.tmp{threading.get_ident()}"
     with open(tmp, "w", encoding="utf-8") as f:
         f.write(text)
-    os.replace(tmp, path)
+    # On Windows another process (antivirus, indexer, an editor) can hold the target for a moment
+    for attempt in range(20):
+        try:
+            os.replace(tmp, path)
+            return
+        except PermissionError:
+            if attempt == 19:
+                raise
+            time.sleep(0.05 * (attempt + 1))
 
 
 class SessionStore:

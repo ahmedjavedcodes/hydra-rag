@@ -6,7 +6,7 @@ Dynamic RAG system: anyone can upload any type of file (PDF, Word, spreadsheet, 
 
 Ingestion: `Any file (PDF/DOCX/XLSX/...)` → file rules by type → load document → chunking → embeddings → Pinecone.
 
-Query: query → embed query → Pinecone similarity search → top 10 (score ≥ 0.80) → rerank to top 3 → Groq LLM → grounded answer.
+Query: query → embed query → Pinecone similarity search → top 10 (score ≥ `MIN_SCORE`, default 0.50; the original design said 0.80, see Known issues) → rerank to top 3 → Groq LLM → grounded answer.
 
 Planned stack: Python 3.13, LangChain, Pinecone, Groq, FastAPI, Next.js.
 
@@ -23,7 +23,7 @@ The first client is WhatsApp through the Meta Cloud API: a FastAPI webhook recei
 
 ### Answers and sources
 
-Every answer must be grounded in the retrieved chunks and return its sources: file name or URL, page (or sheet/row range for spreadsheets, slide number for presentations), and the supporting passage. If no chunk clears the 0.80 score threshold, say the documents don't contain the answer instead of letting the LLM guess.
+Every answer must be grounded in the retrieved chunks and return its sources: file name or URL, page (or sheet/row range for spreadsheets, slide number for presentations), and the supporting passage. If no chunk clears the score threshold (`MIN_SCORE`), say the documents don't contain the answer instead of letting the LLM guess.
 
 ### Dynamic file handling
 
@@ -39,6 +39,13 @@ uv run pytest                             # test suite (tests/test_loaders.py, t
 uv run pytest tests/test_loaders.py -k ac4    # one test; test names carry the spec acceptance-criterion number
 uv run python -m tests.test_ingestion     # legacy script: copies inputs/* into ./data/<new session id> (set PYTHONIOENCODING=utf-8 on Windows)
 uv run python main.py                     # placeholder, prints a greeting
+```
+
+Run the app locally (two terminals):
+
+```
+uv run uvicorn src.api.app:app --port 8000          # REST API (loads models + connects to Pinecone at startup)
+cd web && npm install && npm run dev                # test UI on http://localhost:3000 (NEXT_PUBLIC_API_URL defaults to http://localhost:8000)
 ```
 
 Full ingestion from Python: `from src.pipeline.ingest import ingest_files, ingest_url` (see the module docstring).
@@ -71,6 +78,8 @@ Tests patch `utilities.session.DATA_ROOT` to a temp folder and use a fake vision
 - `src/retrieval/` — `retrieve()` (top `TOP_K` in the session namespace, drops scores under `MIN_SCORE` and documents that are not `indexed`), `CrossEncoderReranker` (`BAAI/bge-reranker-large`, top `RERANK_TOP_N`).
 - `src/pipeline/index.py` — `Indexer`: `index_document`/`index_batch`/`index_session`, skips chunks whose id already holds the same content hash, caches embeddings by hash, removes stale chunk ids, rolls back all of a document's vectors if an upsert fails, confirms vectors are fetchable before `index_state=indexed` (else stays `indexing`; `refresh_status` re-checks), then marks older versions of the same filename/URL `replaced` and deletes their vectors. `delete_document`, `delete_session` (namespace + folder).
 - `src/pipeline/rag_chain.py` — `RagChain.ask(session_id, question) -> Answer(answer, found, sources, notes)`. Rejects empty/too-long questions (`QuestionError`), returns "no documents" / "not found" without calling the LLM when nothing is indexed or passes the threshold, calls the Groq model (`ANSWER_MODEL`, default `openai/gpt-oss-120b`) with numbered passages (`prompts.py`), treats `NOT_FOUND` or an answer without valid citations as not found, drops invalid `[n]` and renumbers sources. Service failures raise `ServiceError` with a user-facing message.
+- `src/api/app.py` — FastAPI REST API used by the UI: `POST /sessions`, `POST /sessions/{id}/files` (multipart; ingestion is synchronous, indexing runs as a background task), `POST /sessions/{id}/urls`, `GET /sessions/{id}/documents` (state + `index_state`, replaced versions hidden), `DELETE /sessions/{id}/documents/{doc_id}`, `POST /sessions/{id}/chat`, `DELETE /sessions/{id}`, `GET /health`, `GET /config`. Endpoints are sync so they run in the threadpool (Playwright-safe). CORS origins from `CORS_ORIGINS` (default localhost:3000). No rate limits or auth yet (plan 03).
+- `web/` — Next.js 16 test UI (single client page `src/app/page.tsx`, API client `src/lib/api.ts`): upload/drag-drop, URL input, document list polling until indexed, chat with expandable sources. Session id kept in localStorage. Read `web/AGENTS.md`: this Next.js version differs from older ones.
 - `folder.txt` — the original target layout; `src/` now follows it.
 
 ## Configuration
@@ -83,11 +92,13 @@ Secrets live in `.env` (gitignored, never commit): `HF_TOKEN`, `GROQ_API_KEY`. `
 - The SSRF check resolves the host before the request, so DNS rebinding is not fully prevented.
 - Playwright's sync API cannot run inside an asyncio event loop: call `ingest_url` from a thread (e.g. FastAPI background task in a threadpool) in plan 03.
 - Session folders are never cleaned up yet (planned in plan 03).
-- `MIN_SCORE=0.80` is uncalibrated; run `scripts/calibrate_threshold.py` on a labelled set before relying on it.
+- `MIN_SCORE` defaults to 0.50, not the 0.80 in the original design: with bge-large and its query prefix, correct matches on the sample inputs scored 0.53-0.65 and unrelated questions at most 0.45, so 0.80 rejected everything. It is still only a first measurement; run `scripts/calibrate_threshold.py` on a labelled set.
 - The content-hash skip works per chunk id (re-indexing the same document is free); identical text in a different document is re-upserted, but its embedding comes from the in-process cache.
+- `gpt-oss` answer models cite as `【1】` or `【1†L2-L4】`; `rag_chain.py` normalises these to `[1]`, and `ANSWER_REASONING_EFFORT` (default `low`) keeps reasoning from using up the token budget.
+- When huggingface.co is unreachable the embedder/reranker fall back to the local model cache (`load_cached_or_remote`).
 - Embedding and reranker models load on first use (several GB of RAM on CPU); the first question in a process is slow.
 
 ## Conventions
 
 - Match the existing style: type-annotated functions with docstrings, `print` for progress, `os.path` for paths.
-- Keep new retrieval settings consistent with the design above (top 10 at score ≥ 0.80, rerank to top 3, 1024-dim bge-large embeddings) unless the user changes them.
+- Keep new retrieval settings consistent with the design above (top 10 at score ≥ `MIN_SCORE`, rerank to top 3, 1024-dim bge-large embeddings) unless the user changes them.

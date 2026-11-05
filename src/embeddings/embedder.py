@@ -7,6 +7,15 @@ from src.config import RagSettings, rag_settings
 BGE_QUERY_PREFIX = "Represent this sentence for searching relevant passages: "
 
 
+def load_cached_or_remote(loader, model_name: str):
+    """Loads a Hugging Face model; when the Hub is unreachable, falls back to the local cache."""
+    try:
+        return loader(model_name)
+    except Exception as e:
+        print(f"   ⚠ Could not reach Hugging Face for {model_name} ({type(e).__name__}); using the local cache")
+        return loader(model_name, local_files_only=True)
+
+
 class Embedder:
     """Interface: normalised vectors for documents and queries."""
 
@@ -26,8 +35,9 @@ class SentenceTransformerEmbedder(Embedder):
         from sentence_transformers import SentenceTransformer
 
         self.model_name = settings.embedding_model
-        self.model = SentenceTransformer(self.model_name)
-        self.dimension = self.model.get_sentence_embedding_dimension()
+        self.model = load_cached_or_remote(SentenceTransformer, self.model_name)
+        get_dimension = getattr(self.model, "get_embedding_dimension", None) or self.model.get_sentence_embedding_dimension
+        self.dimension = get_dimension()
         self.batch_size = batch_size
         self.query_prefix = BGE_QUERY_PREFIX if "bge" in self.model_name.lower() else ""
 

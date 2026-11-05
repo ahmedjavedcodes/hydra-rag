@@ -62,8 +62,11 @@ class RagSettings:
     embedding_dimension: int = _env_int("EMBEDDING_DIMENSION", 1024)
     reranker_model: str = os.getenv("RERANKER_MODEL", "BAAI/bge-reranker-large")
     answer_model: str = os.getenv("ANSWER_MODEL", "openai/gpt-oss-120b")
+    answer_reasoning_effort: str = os.getenv("ANSWER_REASONING_EFFORT", "low")
     top_k: int = _env_int("TOP_K", 10)
-    min_score: float = _env_float("MIN_SCORE", 0.80)
+    # Measured on the sample inputs with bge-large + query prefix: correct matches 0.53-0.65,
+    # unrelated questions <= 0.45. 0.80 rejected every question. Calibrate with scripts/calibrate_threshold.py.
+    min_score: float = _env_float("MIN_SCORE", 0.50)
     rerank_top_n: int = _env_int("RERANK_TOP_N", 3)
     chunk_size: int = _env_int("CHUNK_SIZE", 800)
     chunk_overlap: int = _env_int("CHUNK_OVERLAP", 100)

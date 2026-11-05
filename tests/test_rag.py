@@ -185,6 +185,15 @@ def test_ac5_citations_match_sources_and_are_renumbered(rag, samples):
     assert all(s.passage for s in answer.sources)
 
 
+def test_full_width_citations_are_understood(rag, samples):
+    batch = rag.add([samples["docx"]])
+    rag.llm.reply = "Ten dollars per month【1】."
+    answer = rag.chain.ask(batch.session_id, "What does the basic plan cost?")
+    assert answer.found and answer.answer == "Ten dollars per month[1]." and len(answer.sources) == 1
+    rag.llm.reply = "Ten dollars【1†L2-L4】 and more [1†L3]."
+    assert rag.chain.ask(batch.session_id, "What does the basic plan cost?").answer == "Ten dollars[1] and more [1]."
+
+
 def test_ac6_below_threshold_is_not_found_without_calling_the_llm(rag, samples):
     batch = rag.add([samples["docx"]])
     answer = rag.chain.ask(batch.session_id, "zebra quantum volcano")

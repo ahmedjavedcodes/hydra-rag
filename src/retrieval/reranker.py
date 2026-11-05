@@ -16,7 +16,9 @@ class CrossEncoderReranker(Reranker):
     def __init__(self, settings: RagSettings = rag_settings):
         from sentence_transformers import CrossEncoder
 
-        self.model = CrossEncoder(settings.reranker_model)
+        from src.embeddings.embedder import load_cached_or_remote
+
+        self.model = load_cached_or_remote(CrossEncoder, settings.reranker_model)
 
     def rerank(self, question, matches, top_n):
         if not matches:
