@@ -1,6 +1,48 @@
-# Plan 3: API, frontend and deployment
+# Plan 3: API, WhatsApp channel, frontend and deployment
 
-**Goal:** a web app where anyone uploads files or a URL, chats with them and sees sources. No accounts.
+**Goal:** a server that anyone can use without an account. The first channel is WhatsApp (Meta Cloud API): people send files or a link in a chat, ask questions, and get answers with sources back in the same chat. The REST API behind it is channel-agnostic, so a web frontend can be added later.
+
+**Order:** build the REST API and the WhatsApp webhook first. The Next.js frontend is optional and comes last.
+
+## WhatsApp channel (Meta Cloud API)
+
+The server exposes a webhook; Meta calls it for every incoming message, and the server replies through the Graph API using the business access token. The RAG pipeline stays the same: the webhook is just another client of the ingestion and chat functions.
+
+**Config (`.env`, never committed):** `WHATSAPP_ACCESS_TOKEN`, `WHATSAPP_PHONE_NUMBER_ID`, `WHATSAPP_VERIFY_TOKEN` (any string you choose, used once for webhook setup), `WHATSAPP_APP_SECRET` (to verify signatures), `WHATSAPP_API_VERSION`. Use a System User permanent token: the temporary token from the developer console expires after about 24 hours.
+
+**Webhook endpoints**
+
+| Endpoint | Purpose |
+|---|---|
+| `GET /webhook/whatsapp` | Meta's verification handshake: if `hub.verify_token` matches, return `hub.challenge` as plain text, otherwise 403 |
+| `POST /webhook/whatsapp` | incoming messages and delivery statuses |
+
+**Handling a POST**
+1. Verify the `X-Hub-Signature-256` header (HMAC-SHA256 of the raw body with the app secret) before parsing. Reject on mismatch. This is the real access control, because the endpoint is public.
+2. Return `200` immediately and do the work in a background task. Meta retries when a reply is slow, so a slow RAG answer would otherwise cause duplicate processing.
+3. Deduplicate by message id (`messages[].id`) with a small store (Redis, or an expiring table) so retries are not processed twice.
+4. Ignore `statuses` events (sent/delivered/read) except for logging.
+5. Route by message type:
+   - `text`: if the text is only a URL, scrape and index it; if it is a command (below), run it; otherwise treat it as a question.
+   - `document`, `image`: read the media id, `GET /{media-id}` with the bearer token to get a short-lived URL, download it (also with the bearer token) into the session folder, then index it. Reply "Got it, indexing `<filename>`", and again when it is ready.
+   - `audio`, `video`, `sticker`, anything else: reply that the type is not supported and list what is.
+6. Send replies with `POST /{phone-number-id}/messages` (`messaging_product: "whatsapp"`, `to`, `type: "text"`).
+
+**Sessions from phone numbers.** There is no login, but the sender's number (`wa_id`) identifies the user. Derive the session id as the first 32 hex characters of `HMAC-SHA256(server_secret, wa_id)`: it is stable across messages, fits `validate_session_id`, is the Pinecone namespace, and does not expose the phone number in folder names or Pinecone. Add `SESSION_SECRET` to `.env`. Rotating it orphans existing sessions, so treat it as permanent.
+
+**Reply formatting**
+- Messages are plain text (WhatsApp formatting only: `*bold*`, `_italic_`). The limit is 4096 characters, so split long answers.
+- Format sources as a short list under the answer, for example `Sources: [1] report.pdf, p.3  [2] data.xlsx, rows 10-24`. Keep the quoted passage out by default; offer it with a command such as `/source 1`.
+- "Not found" answers carry no sources.
+
+**Commands** (plain text messages): `/help`, `/docs` (list indexed documents and their status), `/delete <n>` (remove one document), `/clear` (delete the whole session: files and Pinecone namespace), `/source <n>` (show the passage behind the last answer's source).
+
+**Constraints specific to WhatsApp**
+- Free-form replies are only allowed within 24 hours of the user's last message. After that you need an approved message template, so do not plan on server-initiated messages (for example "indexing finished" hours later). Reply while the conversation window is open.
+- Media size and type limits are set by Meta: read them in the Cloud API docs and enforce the lower of Meta's limit and your own before downloading.
+- The webhook URL must be public HTTPS. For development use a tunnel (ngrok or Cloudflare Tunnel) and register that URL in the Meta app dashboard.
+- Messaging a number that is not in the test list only works once the business is verified and the phone number is registered; during development only the allowed test numbers can talk to the bot.
+- Without accounts, anyone who finds the WhatsApp number can message it: keep the per-number rate limit and the daily cost caps.
 
 **Depends on:** Plans 1 and 2 (the ingestion and query functions).
 
@@ -27,7 +69,7 @@ Rules:
 - Rate limit per IP (uploads and chat), since there is no account to throttle.
 - CORS limited to the frontend origin; request-size limit; no stack traces in responses.
 
-## Next.js frontend
+## Next.js frontend (optional, after WhatsApp works)
 
 1. Upload area: drag and drop, many files, a URL box, per-file status chips.
 2. Chat panel: messages, streaming answer, "not found in your documents" state.
@@ -44,7 +86,10 @@ Rules:
 
 ## Done when
 
-- A new visitor uploads a PDF and a URL, asks questions and sees correct sources, with nothing to sign up for.
+- From WhatsApp: send a PDF and a link, ask a question about each, and get an answer with the right page cited in the same chat. `/docs`, `/delete` and `/clear` work.
+- A webhook call with a bad signature is rejected, and a retried delivery of the same message id is processed once.
+- Two different phone numbers cannot see each other's documents.
+- A new visitor uploads a PDF and a URL through the REST API, asks questions and sees correct sources, with nothing to sign up for.
 - Two browsers cannot see each other's documents.
 - The deployed app survives a restart (sessions are still answerable from Pinecone) and cleanup removes stale data.
 - An end-to-end test (upload, wait for `ready`, ask, check sources) passes in CI.
