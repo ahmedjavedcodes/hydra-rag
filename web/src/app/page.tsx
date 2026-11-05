@@ -29,6 +29,7 @@ function docStatus(doc: DocumentRow): { label: string; tone: string } {
   if (doc.state !== "ready") return { label: doc.state, tone: "bg-amber-100 text-amber-800 dark:bg-amber-950 dark:text-amber-300" };
   if (doc.index_state === "indexed") return { label: "ready", tone: "bg-emerald-100 text-emerald-800 dark:bg-emerald-950 dark:text-emerald-300" };
   if (doc.index_state === "failed") return { label: "index failed", tone: "bg-red-100 text-red-800 dark:bg-red-950 dark:text-red-300" };
+  if (!doc.index_state || doc.index_state === "pending") return { label: "queued", tone: "bg-neutral-200 text-neutral-700 dark:bg-neutral-800 dark:text-neutral-300" };
   return { label: "indexing", tone: "bg-amber-100 text-amber-800 dark:bg-amber-950 dark:text-amber-300" };
 }
 

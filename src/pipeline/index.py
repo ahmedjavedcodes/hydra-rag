@@ -133,7 +133,8 @@ class Indexer:
         """Indexes the documents an ingestion batch produced (duplicates are skipped when already indexed)."""
         store = SessionStore(batch.session_id)
         results = []
-        for file in batch.files:
+        # Smallest documents first, so a big spreadsheet doesn't keep small files waiting
+        for file in sorted(batch.files, key=lambda f: f.element_count):
             if file.status != "ok" or not file.doc_id:
                 continue
             doc = store.get(file.doc_id) or {}
